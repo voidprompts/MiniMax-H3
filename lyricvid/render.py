@@ -243,6 +243,8 @@ class Renderer:
             self.layouts.append(lay)
         self.line_positions = [self.positions[self.phrase_index(ln.start) % len(self.positions)]
                                for ln in song.lines]
+        lum = 0.2126 * pal.bg_top[0] + 0.7152 * pal.bg_top[1] + 0.0722 * pal.bg_top[2]
+        self.ink = (255, 255, 255) if lum < 128 else (22, 22, 24)
         self.duration = max(an.duration, song.duration or 0.0)
         self._spec: dict = {}
         self._grid_t0 = 0.0
@@ -549,7 +551,7 @@ class Renderer:
         tf = font(DISPLAY, tsize)
         if title:
             tw = d.textlength(title.upper(), font=tf)
-            d.text(((cw - tw) / 2, chh * 0.20), title.upper(), font=tf, fill=(255, 255, 255, 255))
+            d.text(((cw - tw) / 2, chh * 0.20), title.upper(), font=tf, fill=tuple(list(self.ink) + [255]))
         if artist:
             af = font(BODY, int(tsize * 0.24))
             aw = d.textlength(artist.upper(), font=af)
@@ -568,7 +570,7 @@ class Renderer:
         d = ImageDraw.Draw(canvas)
         f = font(BODY, max(24, int(H * 0.038)))
         wpx = d.textlength(label, font=f)
-        d.text(((cw - wpx) / 2, 24), label, font=f, fill=(255, 255, 255, int(140 + 90 * beat_env)))
+        d.text(((cw - wpx) / 2, 24), label, font=f, fill=tuple(list(self.ink) + [int(140 + 90 * beat_env)]))
         rgb, alpha = self._chroma(canvas, 0.0, accent)
         self._blit(img, int(W * 0.15), int(H * 0.80), rgb, alpha)
 
