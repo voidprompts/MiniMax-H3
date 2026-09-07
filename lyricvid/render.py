@@ -215,6 +215,7 @@ class RenderConfig:
     min_font: int = 46
     show_progress: bool = True
     show_kicker: bool = True
+    bg_paths: list = field(default_factory=list)
 
 
 class Renderer:
@@ -250,6 +251,46 @@ class Renderer:
         self._grid_t0 = 0.0
         self._line_starts = np.array([ln.start for ln in song.lines]) if song.lines else np.zeros(0)
         self._line_ends = np.array([ln.end for ln in song.lines]) if song.lines else np.zeros(0)
+        self.bg_plates: list = []
+        self.bg_secs: list = []
+        self._scrim = None
+        if cfg.bg_paths:
+            pw, phh = int(W * 1.30), int(H * 1.30)
+            for p in cfg.bg_paths:
+                im = Image.open(p).convert("RGB").resize((pw, phh), Image.LANCZOS)
+                arr = (np.asarray(im).astype(np.float32) * 0.74).astype(np.uint8)
+                self.bg_plates.append(Image.fromarray(arr, "RGB"))
+            secs: list = []
+            prev = object()
+            for ln in song.lines:
+                nm = (ln.section or "").strip()
+                if nm != prev:
+                    secs.append([ln.start, ln.end, nm])
+                    prev = nm
+                else:
+                    secs[-1][1] = ln.end
+            if secs:
+                secs[0][0] = 0.0
+                secs[-1][1] = self.duration + 1.0
+                np_ = max(len(self.bg_plates), 1)
+                tagged = [[s, e,
+                           (1 if ("chorus" in nm.lower() or "hook" in nm.lower())
+                            else 2 if ("bridge" in nm.lower() or "outro" in nm.lower())
+                            else 0) % np_]
+                          for s, e, nm in secs]
+                co: list = []
+                for s, e, pi in tagged:          # absorb mis-tagged islands (<4s)
+                    if co and (e - s) < 4.0:
+                        co[-1][1] = e
+                    else:
+                        co.append([s, e, pi])
+                self.bg_secs = []
+                for s, e, pi in co:              # merge same-plate neighbours
+                    if self.bg_secs and self.bg_secs[-1][2] == pi:
+                        self.bg_secs[-1][1] = e
+                    else:
+                        self.bg_secs.append([s, e, pi])
+            self._scrim = (1.0 - 0.42 * make_radial(W, H, 0.5, 0.52, 0.85))[..., None].astype(np.float32)
 
     # ------------------------------------------------------------------ music
     def phrase_index(self, t: float) -> int:
@@ -330,6 +371,31 @@ class Renderer:
         if len(self.base_cache) > 6:
             self.base_cache.pop(next(iter(self.base_cache)))
         return img
+
+    def _bg_frame(self, t: float, beat_env: float) -> Image.Image:
+        """Animated cinematic backdrop: Ken Burns drift per section (hard cut on
+        section change) plus a subtle beat pump and a centre scrim for legibility."""
+        secs = self.bg_secs
+        i = len(secs) - 1
+        for k, sec in enumerate(secs):
+            if t < sec[1]:
+                i = k
+                break
+        s0, s1, pi = secs[i]
+        plate = self.bg_plates[min(pi, len(self.bg_plates) - 1)]
+        PW, PH = plate.size
+        p = float(np.clip((t - s0) / max(s1 - s0, 1.0), 0, 1))
+        zoom = 1.04 + 0.14 * p + 0.012 * beat_env
+        par = 1 if i % 2 == 0 else -1
+        cx = 0.5 + par * 0.05 * (p - 0.5)
+        cy = 0.5 - par * 0.04 * (p - 0.5)
+        ww, wh = PW / zoom, PH / zoom
+        x0 = min(max(cx * PW - ww / 2, 0), PW - ww)
+        y0 = min(max(cy * PH - wh / 2, 0), PH - wh)
+        crop = plate.crop((int(x0), int(y0), int(x0 + ww), int(y0 + wh)))
+        arr = np.asarray(crop.resize((self.W, self.H), Image.BILINEAR)).astype(np.float32)
+        arr = arr * (1.0 / 255.0) * self._scrim
+        return Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8), "RGB")
 
     def lut(self, key: int, bright: float) -> list:
         hit = self.lut_cache.get(key)
@@ -440,8 +506,9 @@ class Renderer:
         ph = self.phrase_index(t)
         accent = pal.accents[ph % len(pal.accents)]
 
-        img = self.base_for_phrase(ph).copy()
-        bright = 0.88 + 0.26 * rms + 0.20 * beat_env
+        img = self.base_for_phrase(ph).copy() if not self.bg_plates else self._bg_frame(t, beat_env)
+        bright = (0.86 + 0.18 * rms + 0.12 * beat_env) if self.bg_plates else \
+                 (0.88 + 0.26 * rms + 0.20 * beat_env)
         img = img.point(self.lut(int(round(bright * 200)), bright))
         if pal.glow > 0:
             flash = 1.0 if self.is_bar_hit(t, 1.3 / cfg.fps) else 0.0

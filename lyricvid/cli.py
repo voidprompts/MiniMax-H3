@@ -36,6 +36,8 @@ def main(argv=None) -> int:
     p.add_argument("--dump-timing", default="")
     p.add_argument("--width", type=int, default=0, help="override render width (px)")
     p.add_argument("--height", type=int, default=0, help="override render height (px)")
+    p.add_argument("--bg", nargs="*", default=[], metavar="IMG",
+                   help="cinematic backdrop plates (verse/chorus/bridge); animated Ken Burns per section")
     p.add_argument("--analyze-only", action="store_true")
     a = p.parse_args(argv)
 
@@ -76,7 +78,8 @@ def main(argv=None) -> int:
                        artist=a.artist or song.artist, bars_visible=not a.no_bars,
                        grain_scale=a.grain, lead_in=max(0.0, a.lead_in),
                        show_progress=not a.no_progress, show_kicker=not a.no_kicker,
-                       max_font=base_font, min_font=int(base_font * 0.35))
+                       max_font=base_font, min_font=int(base_font * 0.35),
+                       bg_paths=list(a.bg))
     render_video(an, song, a.out, cfg, audio_src=a.audio, t_start=a.start, t_end=end,
                  crf=a.crf, preset=a.preset)
     return 0
