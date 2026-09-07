@@ -34,6 +34,8 @@ def main(argv=None) -> int:
     p.add_argument("--crf", type=int, default=20)
     p.add_argument("--preset", default="fast", choices=["veryfast", "fast", "medium", "slow"])
     p.add_argument("--dump-timing", default="")
+    p.add_argument("--width", type=int, default=0, help="override render width (px)")
+    p.add_argument("--height", type=int, default=0, help="override render height (px)")
     p.add_argument("--analyze-only", action="store_true")
     a = p.parse_args(argv)
 
@@ -66,6 +68,8 @@ def main(argv=None) -> int:
                       f, indent=2, ensure_ascii=False)
 
     W, H = SIZES[a.ar]
+    if a.width and a.height:
+        W, H = a.width, a.height
     W, H = (W // 2) * 2, (H // 2) * 2
     base_font = int(132 * (H / 1080 if H >= W else W / 1080))
     cfg = RenderConfig(W=W, H=H, fps=a.fps, style=a.style, title=a.title or song.title,
